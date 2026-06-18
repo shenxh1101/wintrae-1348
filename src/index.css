@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: #FAF8F5;
+  color: #1E3A5F;
+  margin: 0;
+  min-height: 100vh;
+}
+
+.font-mono-num {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.input-underline {
+  @apply border-0 border-b border-stone2 bg-transparent focus:border-gold-400 focus:ring-0 focus:outline-none transition-colors;
+}
+
+.card-base {
+  @apply bg-white rounded-sm border border-stone2 shadow-card;
+}
+
+.btn-primary {
+  @apply bg-navy-800 text-white px-4 py-2 text-sm font-medium rounded-sm border border-gold-400/30 hover:bg-navy-700 transition-colors cursor-pointer;
+}
+
+.btn-secondary {
+  @apply bg-white text-navy-800 px-4 py-2 text-sm font-medium rounded-sm border border-navy-800/30 hover:bg-navy-50 transition-colors cursor-pointer;
+}
+
+.btn-ghost {
+  @apply text-navy-600 px-3 py-1.5 text-sm rounded-sm hover:bg-navy-50 transition-colors cursor-pointer;
+}
+
+.btn-danger {
+  @apply bg-white text-danger px-3 py-1.5 text-sm rounded-sm border border-danger/30 hover:bg-red-50 transition-colors cursor-pointer;
+}
+
+.section-title {
+  @apply font-serif text-lg font-semibold text-navy-800 flex items-center gap-2 pb-3 border-b border-stone2;
+}
+
+.section-title::before {
+  content: "";
+  @apply w-1 h-5 bg-gold-400 rounded-sm;
+}
+
+.nav-item {
+  @apply flex items-center gap-3 px-4 py-3 text-sm text-navy-600 hover:bg-navy-50 cursor-pointer border-l-2 border-transparent transition-all;
+}
+
+.nav-item.active {
+  @apply bg-navy-50 text-navy-800 font-medium border-gold-400;
+}
+
+.scroll-smooth-custom {
+  scroll-behavior: smooth;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #bcccdc;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #829ab1;
+}
+
+.number-input::-webkit-outer-spin-button,
+.number-input::-webkit-inner-spin-button {
+  opacity: 1;
+}
+
+.gold-divider {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #C9A962, transparent);
+}
+
+@media print {
+  body {
+    background: white !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .a4-page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 20mm;
+    margin: 0;
+    page-break-after: always;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .page-break-before {
+    page-break-before: always;
+  }
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+  @page {
+    size: A4;
+    margin: 0;
+  }
+}
