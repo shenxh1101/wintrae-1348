@@ -12,14 +12,22 @@ import {
   ChevronRight,
   Send,
   RefreshCw,
+  Tag,
+  GitCompareArrows,
 } from 'lucide-react';
 import { useBudgetStore } from '@/store/budgetStore';
 import {
   CONFIRMATION_STATUS_LABELS,
   ConfirmationStatus,
   ConfirmationRecord,
+  CostCategory,
 } from '@/types';
-import { calculateBudget, formatCurrency, formatNumber } from '@/utils/calculations';
+import {
+  calculateBudget,
+  calcItemSubtotal,
+  formatCurrency,
+  formatNumber,
+} from '@/utils/calculations';
 
 const STATUS_STYLES: Record<
   ConfirmationStatus,
@@ -54,15 +62,25 @@ const STATUS_STYLES: Record<
 export default function ConfirmationSection() {
   const data = useBudgetStore((s) => s.data);
   const updateConfirmation = useBudgetStore((s) => s.updateConfirmation);
+  const setShowAttachmentGallery = useBudgetStore((s) => s.setShowAttachmentGallery);
   const result = useMemo(() => calculateBudget(data), [data]);
   const confirmation = data.confirmation;
+  const snapshots = data.snapshots;
 
   const [operator, setOperator] = useState<string>('');
   const [statusComment, setStatusComment] = useState<string>('');
   const [showHistory, setShowHistory] = useState(true);
+  const [showDiff, setShowDiff] = useState<boolean>(false);
 
   const styles = STATUS_STYLES[confirmation.status];
   const StatusIcon = styles.icon;
+
+  // 上次确认快照（最近一个 confirmed 状态的快照）
+  const lastConfirmedSnapshot = useMemo(() => {
+    return [...snapshots]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .find((s) => s.status === 'confirmed');
+  }, [snapshots]);
 
   const handleChangeStatus = (nextStatus: ConfirmationStatus) => {
     if (nextStatus === confirmation.status) return;
@@ -112,13 +130,31 @@ export default function ConfirmationSection() {
     <section id="section-confirmation" className="scroll-mt-28 space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="section-title !border-0 !pb-0">客户确认流程</h2>
-        <button
-          onClick={() => setShowHistory((v) => !v)}
-          className="btn-ghost !py-1.5 text-xs flex items-center gap-1.5"
-        >
-          <History className="w-3.5 h-3.5" />
-          {showHistory ? '隐藏历史' : '查看历史'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAttachmentGallery(true)}
+            className="btn-ghost !py-1.5 text-xs flex items-center gap-1.5"
+          >
+            <FileCheck className="w-3.5 h-3.5" />
+            报价附件清单
+          </button>
+          {lastConfirmedSnapshot && (
+            <button
+              onClick={() => setShowDiff((v) => !v)}
+              className="btn-ghost !py-1.5 text-xs flex items-center gap-1.5"
+            >
+              <GitCompareArrows className="w-3.5 h-3.5" />
+              {showDiff ? '隐藏差异' : `对比 v${lastConfirmedSnapshot.version}`}
+            </button>
+          )}
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            className="btn-ghost !py-1.5 text-xs flex items-center gap-1.5"
+          >
+            <History className="w-3.5 h-3.5" />
+            {showHistory ? '隐藏历史' : '查看历史'}
+          </button>
+        </div>
       </div>
 
       {/* 状态横幅 */}
@@ -143,6 +179,10 @@ export default function ConfirmationSection() {
                 <span className={`font-serif text-lg font-semibold ${styles.text}`}>
                   {CONFIRMATION_STATUS_LABELS[confirmation.status]}
                 </span>
+                <span className="text-[11px] px-2 py-0.5 rounded-sm bg-white/70 text-navy-600 font-mono-num border border-white/80 flex items-center gap-1">
+                  <Tag className="w-3 h-3" />
+                  版本 v{confirmation.version}
+                </span>
                 {confirmation.confirmedAt && confirmation.status === 'confirmed' && (
                   <span className="text-xs text-navy-400">
                     于 {new Date(confirmation.confirmedAt).toLocaleDateString('zh-CN')} 确认
@@ -154,6 +194,29 @@ export default function ConfirmationSection() {
                 <span className="font-mono-num font-semibold text-navy-700 ml-1">
                   {formatCurrency(result.grandTotal)}
                 </span>
+                {lastConfirmedSnapshot && (
+                  <>
+                    <span className="mx-1.5 text-navy-300">·</span>
+                    <span className="text-navy-400">上次确认 v{lastConfirmedSnapshot.version}：</span>
+                    <span
+                      className={`font-mono-num font-semibold ml-1 ${
+                        Math.abs(result.grandTotal - lastConfirmedSnapshot.grandTotal) < 0.01
+                          ? 'text-navy-700'
+                          : result.grandTotal > lastConfirmedSnapshot.grandTotal
+                          ? 'text-danger'
+                          : 'text-success'
+                      }`}
+                    >
+                      {formatCurrency(lastConfirmedSnapshot.grandTotal)}
+                      {Math.abs(result.grandTotal - lastConfirmedSnapshot.grandTotal) >= 0.01 && (
+                        <span className="ml-1 text-[10px] font-normal">
+                          ({result.grandTotal > lastConfirmedSnapshot.grandTotal ? '+' : ''}
+                          {formatCurrency(result.grandTotal - lastConfirmedSnapshot.grandTotal)})
+                        </span>
+                      )}
+                    </span>
+                  </>
+                )}
                 <span className="mx-1.5 text-navy-300">·</span>
                 <span className="font-mono-num">
                   {formatNumber(data.basic.peopleCount)} 人
@@ -415,6 +478,220 @@ export default function ConfirmationSection() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 版本对比面板 */}
+      {showDiff && lastConfirmedSnapshot && (
+        <div className="card-base overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-stone2 bg-navy-50 flex items-center justify-between">
+            <h3 className="font-serif font-semibold text-navy-800 flex items-center gap-2">
+              <GitCompareArrows className="w-4 h-4 text-gold-500" />
+              预算版本对比
+              <span className="text-xs font-normal text-navy-400 font-sans">
+                当前 vs v{lastConfirmedSnapshot.version} (
+                {new Date(lastConfirmedSnapshot.timestamp).toLocaleDateString('zh-CN')})
+              </span>
+            </h3>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            {/* 总额差异 */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="p-3 rounded-sm bg-cream/50 border border-stone2">
+                <p className="text-[11px] text-navy-400">上次确认总额</p>
+                <p className="font-mono-num text-lg font-semibold text-navy-700 mt-1">
+                  {formatCurrency(lastConfirmedSnapshot.grandTotal)}
+                </p>
+              </div>
+              <div className="p-3 rounded-sm bg-white border border-stone2">
+                <p className="text-[11px] text-navy-400">当前预算总额</p>
+                <p className="font-mono-num text-lg font-semibold text-navy-800 mt-1">
+                  {formatCurrency(result.grandTotal)}
+                </p>
+              </div>
+              <div
+                className={`p-3 rounded-sm border ${
+                  Math.abs(result.grandTotal - lastConfirmedSnapshot.grandTotal) < 0.01
+                    ? 'bg-gray-50 border-stone2'
+                    : result.grandTotal > lastConfirmedSnapshot.grandTotal
+                    ? 'bg-red-50 border-red-100'
+                    : 'bg-green-50 border-green-100'
+                }`}
+              >
+                <p className="text-[11px] text-navy-400">差额</p>
+                <p
+                  className={`font-mono-num text-lg font-semibold mt-1 ${
+                    Math.abs(result.grandTotal - lastConfirmedSnapshot.grandTotal) < 0.01
+                      ? 'text-navy-500'
+                      : result.grandTotal > lastConfirmedSnapshot.grandTotal
+                      ? 'text-danger'
+                      : 'text-success'
+                  }`}
+                >
+                  {result.grandTotal > lastConfirmedSnapshot.grandTotal ? '+' : ''}
+                  {formatCurrency(result.grandTotal - lastConfirmedSnapshot.grandTotal)}
+                </p>
+              </div>
+            </div>
+
+            {/* 分类差异 */}
+            <div>
+              <p className="text-xs font-medium text-navy-500 mb-2">按费用分类对比</p>
+              <div className="space-y-1.5">
+                {result.categoryTotals.map((cat) => {
+                  const prev = lastConfirmedSnapshot.categoryTotals.find(
+                    (c) => c.category === cat.category,
+                  );
+                  const prevSubtotal = prev?.subtotal || 0;
+                  const diff = cat.subtotal - prevSubtotal;
+                  return (
+                    <div
+                      key={cat.category}
+                      className="flex items-center justify-between px-3 py-2 rounded-sm bg-white border border-stone2"
+                    >
+                      <span className="text-sm text-navy-700">{cat.name}</span>
+                      <div className="flex items-center gap-4 text-xs font-mono-num">
+                        <span className="text-navy-400">
+                          {formatCurrency(prevSubtotal)}
+                        </span>
+                        <span className="text-navy-300">→</span>
+                        <span className="text-navy-700 font-medium">
+                          {formatCurrency(cat.subtotal)}
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded-sm font-medium ${
+                            Math.abs(diff) < 0.01
+                              ? 'bg-gray-50 text-navy-400'
+                              : diff > 0
+                              ? 'bg-red-50 text-danger'
+                              : 'bg-green-50 text-success'
+                          }`}
+                        >
+                          {diff > 0 ? '+' : ''}
+                          {formatCurrency(diff)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 明细差异 */}
+            <div>
+              <p className="text-xs font-medium text-navy-500 mb-2">按明细项对比</p>
+              <div className="space-y-1 max-h-[260px] overflow-y-auto border border-stone2 rounded-sm">
+                {(() => {
+                  // 用 data.costs + calcItemSubtotal 重建当前明细
+                  const currentCatTotals: Record<string, Record<string, { name: string; subtotal: number }>> =
+                    {};
+                  const catKeys: CostCategory[] = [
+                    'venue',
+                    'catering',
+                    'materials',
+                    'transport',
+                    'personnel',
+                    'contingency',
+                  ];
+                  catKeys.forEach((cat) => {
+                    currentCatTotals[cat] = {};
+                    data.costs[cat].forEach((it) => {
+                      const r = calcItemSubtotal(
+                        it,
+                        data.basic.cityTier,
+                        data.currentPlan,
+                        cat,
+                        data.suppliers[cat],
+                        data.adjustments.taxRate,
+                      );
+                      currentCatTotals[cat][it.id] = {
+                        name: it.name,
+                        subtotal: r.subtotal,
+                      };
+                    });
+                  });
+
+                  const rows: {
+                    id: string;
+                    name: string;
+                    category: string;
+                    prev: number;
+                    curr: number;
+                  }[] = [];
+                  lastConfirmedSnapshot.items.forEach((it) => {
+                    const curr =
+                      currentCatTotals[it.category]?.[it.itemId]?.subtotal || 0;
+                    rows.push({
+                      id: it.itemId,
+                      name: it.name,
+                      category: it.category,
+                      prev: it.subtotal,
+                      curr,
+                    });
+                  });
+                  // 新增项
+                  catKeys.forEach((cat) => {
+                    Object.keys(currentCatTotals[cat]).forEach((itemId) => {
+                      if (
+                        !lastConfirmedSnapshot.items.find(
+                          (s) => s.itemId === itemId && s.category === cat,
+                        )
+                      ) {
+                        rows.push({
+                          id: itemId,
+                          name: currentCatTotals[cat][itemId].name,
+                          category: cat,
+                          prev: 0,
+                          curr: currentCatTotals[cat][itemId].subtotal,
+                        });
+                      }
+                    });
+                  });
+                  return rows
+                    .filter((r) => Math.abs(r.prev - r.curr) >= 0.01)
+                    .map((r) => {
+                      const diff = r.curr - r.prev;
+                      const catLabel =
+                        lastConfirmedSnapshot.categoryTotals.find(
+                          (c) => c.category === r.category,
+                        )?.name || r.category;
+                      return (
+                        <div
+                          key={r.id}
+                          className="flex items-center justify-between px-3 py-2 bg-white border-b border-stone2 last:border-b-0"
+                        >
+                          <div>
+                            <span className="text-sm text-navy-700">{r.name}</span>
+                            <span className="text-[11px] text-navy-400 ml-2">
+                              {catLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs font-mono-num">
+                            <span className="text-navy-400">
+                              {formatCurrency(r.prev)}
+                            </span>
+                            <span className="text-navy-300">→</span>
+                            <span className="text-navy-700 font-medium">
+                              {formatCurrency(r.curr)}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded-sm font-medium ${
+                                diff > 0
+                                  ? 'bg-red-50 text-danger'
+                                  : 'bg-green-50 text-success'
+                              }`}
+                            >
+                              {diff > 0 ? '+' : ''}
+                              {formatCurrency(diff)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    });
+                })()}
+              </div>
+            </div>
           </div>
         </div>
       )}

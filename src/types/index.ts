@@ -46,6 +46,8 @@ export interface Adjustments {
   contingencyRate: number;
 }
 
+export type QuoteType = 'total' | 'unit';
+
 export interface SupplierInfo {
   id: string;
   name: string;
@@ -53,11 +55,13 @@ export interface SupplierInfo {
   phone: string;
   email: string;
   quoteDate: string;
-  /** 报价金额（总价，或按单位计价） */
+  /** 报价类型：total=总价报价；unit=单价报价（需按费用项数量折算） */
+  quoteType: QuoteType;
+  /** 报价金额（对应 quoteType） */
   quoteAmount: number;
   /** 报价计价单位 */
   quoteUnit: string;
-  /** 是否为含税报价 */
+  /** 是否为含税报价 —— true 时此报价已含税，不再在总计中重复计税 */
   taxIncluded: boolean;
   /** 对应税率（当 taxIncluded=false 时适用） */
   applicableTaxRate: number;
@@ -67,6 +71,8 @@ export interface SupplierInfo {
   validUntil: string;
   /** 附件链接（如报价单PDF） */
   attachmentUrl: string;
+  /** 附件文件名（可选，用于附件清单展示） */
+  attachmentName: string;
   /** 综合评分 1-5 */
   rating: number;
   /** 内部备注（不显示给客户） */
@@ -94,11 +100,13 @@ export interface ConfirmationRecord {
 
 export interface ClientConfirmation {
   status: ConfirmationStatus;
+  /** 当前确认版本号（从 1 开始，每次确认或需调整时递增） */
+  version: number;
   /** 客户名称 */
   confirmedBy: string;
   /** 联系电话 */
   confirmedPhone: string;
-  /** 确认时间 */
+  /** 确认时间（每次从需调整→已确认时重新更新） */
   confirmedAt: string;
   /** 确认备注（客户可见） */
   comment: string;
@@ -110,6 +118,28 @@ export interface ClientConfirmation {
   requestedAdjustments: string;
 }
 
+export interface BudgetSnapshot {
+  id: string;
+  /** 对应确认版本号 */
+  version: number;
+  /** 快照时的确认状态 */
+  status: ConfirmationStatus;
+  /** 快照时间 */
+  timestamp: string;
+  /** 操作人 */
+  operator: string;
+  /** 备注（客户可见） */
+  comment: string;
+  /** 总预算（含税+服务费） */
+  grandTotal: number;
+  /** 税前总金额 */
+  pretaxTotal: number;
+  /** 分类汇总 */
+  categoryTotals: { category: CostCategory; name: string; subtotal: number }[];
+  /** 费用明细快照 */
+  items: { category: CostCategory; itemId: string; name: string; subtotal: number }[];
+}
+
 export interface BudgetData {
   basic: BasicInfo;
   currentPlan: PlanType;
@@ -117,6 +147,8 @@ export interface BudgetData {
   adjustments: Adjustments;
   suppliers: Record<CostCategory, SupplierInfo[]>;
   confirmation: ClientConfirmation;
+  /** 预算版本快照（每次确认或要求调整时自动保存） */
+  snapshots: BudgetSnapshot[];
   /** 创建时间 */
   createdAt: string;
   /** 最后更新时间 */

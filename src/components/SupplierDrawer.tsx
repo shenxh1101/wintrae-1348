@@ -16,6 +16,9 @@ import {
   Link as LinkIcon,
   Shield,
   Info,
+  Layers,
+  Hash,
+  FileText,
 } from 'lucide-react';
 import { useBudgetStore } from '@/store/budgetStore';
 import { CATEGORY_LABELS, SupplierInfo, CostCategory } from '@/types';
@@ -61,10 +64,12 @@ export default function SupplierDrawer() {
     updateSupplier(activeCategory as CostCategory, id, field, value);
   };
 
-  const calcSupplierFinal = (s: SupplierInfo): number => {
+  const calcSupplierFinal = (s: SupplierInfo, quantity: number = 1): number => {
+    const baseQty = Math.max(1, quantity);
+    const base = s.quoteType === 'unit' ? s.quoteAmount * baseQty : s.quoteAmount;
     return s.taxIncluded
-      ? s.quoteAmount
-      : s.quoteAmount * (1 + (s.applicableTaxRate || data.adjustments.taxRate) / 100);
+      ? base
+      : base * (1 + (s.applicableTaxRate || data.adjustments.taxRate) / 100);
   };
 
   const checkValid = (
@@ -202,6 +207,15 @@ export default function SupplierDrawer() {
                         #{idx + 1}
                       </span>
                       <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium ${
+                          s.quoteType === 'unit'
+                            ? 'bg-sky-50 text-sky-700'
+                            : 'bg-violet-50 text-violet-700'
+                        }`}
+                      >
+                        {s.quoteType === 'unit' ? '单价报价' : '总价报价'}
+                      </span>
+                      <span
                         className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium ${valid.color} ${valid.bgColor}`}
                       >
                         有效期 · {valid.label}
@@ -241,9 +255,16 @@ export default function SupplierDrawer() {
                           <span className="font-mono-num text-lg font-bold text-navy-800">
                             {formatCurrency(final)}
                           </span>
-                          <span className="text-[10px] text-navy-400">含税</span>
+                          <span className="text-[10px] text-navy-400">
+                            含税{s.quoteType === 'unit' ? ' · 折算' : ''}
+                          </span>
                         </div>
-                        {!s.taxIncluded && s.quoteAmount > 0 && (
+                        {s.quoteType === 'unit' && s.quoteAmount > 0 && (
+                          <p className="text-[10px] text-navy-400">
+                            单价 {formatCurrency(s.quoteAmount)}/{s.quoteUnit.replace('元/', '')}
+                          </p>
+                        )}
+                        {!s.taxIncluded && s.quoteAmount > 0 && s.quoteType === 'total' && (
                           <p className="text-[10px] text-navy-400">
                             报价 {formatCurrency(s.quoteAmount)} +{' '}
                             {s.applicableTaxRate || data.adjustments.taxRate}% 税
@@ -358,12 +379,46 @@ export default function SupplierDrawer() {
                     </div>
 
                     <div className="p-3 bg-cream/60 border border-stone2 rounded-sm space-y-3">
+                      {/* 报价类型切换 */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-navy-500 mr-1">报价类型：</span>
+                        <div className="inline-flex rounded-sm overflow-hidden border border-stone2 text-xs">
+                          <button
+                            onClick={() => updateField(s.id, 'quoteType', 'total')}
+                            className={`px-3 py-1.5 flex items-center gap-1 ${
+                              s.quoteType === 'total'
+                                ? 'bg-violet-600 text-white'
+                                : 'bg-white text-navy-600 hover:bg-violet-50'
+                            }`}
+                          >
+                            <Layers className="w-3 h-3" />
+                            总价报价
+                          </button>
+                          <button
+                            onClick={() => updateField(s.id, 'quoteType', 'unit')}
+                            className={`px-3 py-1.5 flex items-center gap-1 border-l border-stone2 ${
+                              s.quoteType === 'unit'
+                                ? 'bg-sky-600 text-white'
+                                : 'bg-white text-navy-600 hover:bg-sky-50'
+                            }`}
+                          >
+                            <Hash className="w-3 h-3" />
+                            单价报价
+                          </button>
+                        </div>
+                        <span className="text-[10px] text-navy-400 ml-auto">
+                          {s.quoteType === 'unit'
+                            ? '选中后代入时会按费用项数量自动折算'
+                            : '直接作为该项目的总费用'}
+                        </span>
+                      </div>
+
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 flex-1">
                           <DollarSign className="w-4 h-4 text-gold-600 shrink-0" />
                           <div className="flex-1 min-w-0">
                             <label className="block text-xs text-navy-500 mb-0.5">
-                              报价金额
+                              {s.quoteType === 'unit' ? '单价金额' : '总价金额'}
                             </label>
                             <div className="flex items-center gap-2">
                               <span className="text-navy-500 shrink-0">¥</span>
@@ -457,42 +512,71 @@ export default function SupplierDrawer() {
                       </div>
 
                       <div className="pt-2.5 border-t border-stone2/60 flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
                           <Info className="w-3.5 h-3.5 text-navy-400" />
-                          <span className="text-navy-500">折算含税总价：</span>
+                          <span className="text-navy-500">
+                            {s.quoteType === 'unit' ? '按1份折算含税价：' : '折算含税总价：'}
+                          </span>
                           <span className="font-mono-num text-base font-bold text-navy-800">
                             {formatCurrency(final)}
                           </span>
+                          {s.quoteType === 'unit' && (
+                            <span className="text-[10px] text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded-sm">
+                              最终会按费用项实际数量 × 该单价
+                            </span>
+                          )}
+                          {s.taxIncluded && (
+                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-sm">
+                              已含税 · 总计不再重复计税
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    <div>
-                      <label className="flex items-center gap-1.5 text-xs text-navy-500 mb-1">
-                        <LinkIcon className="w-3 h-3" />
-                        附件链接（报价单 PDF / 云盘）
-                      </label>
-                      <div className="flex items-center gap-2">
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <label className="flex items-center gap-1.5 text-xs text-navy-500 mb-1">
+                          <FileText className="w-3 h-3" />
+                          附件文件名称（可选）
+                        </label>
                         <input
                           type="text"
-                          value={s.attachmentUrl}
-                          placeholder="https://... 粘贴报价单或云盘链接"
+                          value={s.attachmentName}
+                          placeholder="如：XX场地-报价单-202606.pdf"
                           onChange={(e) =>
-                            updateField(s.id, 'attachmentUrl', e.target.value)
+                            updateField(s.id, 'attachmentName', e.target.value)
                           }
-                          className="flex-1 px-3 py-2 border border-stone2 rounded-sm text-sm focus:outline-none focus:border-gold-400"
+                          className="w-full px-3 py-2 border border-stone2 rounded-sm text-sm focus:outline-none focus:border-gold-400"
                         />
-                        {s.attachmentUrl && (
-                          <a
-                            href={s.attachmentUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="px-3 py-2 text-xs text-navy-600 hover:text-navy-800 hover:bg-navy-50 rounded-sm border border-stone2 transition-colors shrink-0"
-                          >
-                            打开
-                          </a>
-                        )}
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-1.5 text-xs text-navy-500 mb-1">
+                          <LinkIcon className="w-3 h-3" />
+                          附件链接（报价单 PDF / 云盘）
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={s.attachmentUrl}
+                            placeholder="https://... 粘贴报价单或云盘链接"
+                            onChange={(e) =>
+                              updateField(s.id, 'attachmentUrl', e.target.value)
+                            }
+                            className="flex-1 px-3 py-2 border border-stone2 rounded-sm text-sm focus:outline-none focus:border-gold-400"
+                          />
+                          {s.attachmentUrl && (
+                            <a
+                              href={s.attachmentUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-3 py-2 text-xs text-navy-600 hover:text-navy-800 hover:bg-navy-50 rounded-sm border border-stone2 transition-colors shrink-0"
+                            >
+                              打开
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
 

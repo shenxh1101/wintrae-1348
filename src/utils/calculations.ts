@@ -91,6 +91,7 @@ export function createDefaultSupplier(category: CostCategory): SupplierInfo {
     phone: '',
     email: '',
     quoteDate: new Date().toISOString().slice(0, 10),
+    quoteType: 'total',
     quoteAmount: 0,
     quoteUnit: '元/次',
     taxIncluded: true,
@@ -98,6 +99,7 @@ export function createDefaultSupplier(category: CostCategory): SupplierInfo {
     isRecommended: false,
     validUntil: nextMonth.toISOString().slice(0, 10),
     attachmentUrl: '',
+    attachmentName: '',
     rating: 3,
     internalNotes: '',
     notes: '',
@@ -181,6 +183,7 @@ export function createDefaultBudget(): BudgetData {
     },
     confirmation: {
       status: 'pending',
+      version: 1,
       confirmedBy: '',
       confirmedPhone: '',
       confirmedAt: '',
@@ -189,13 +192,41 @@ export function createDefaultBudget(): BudgetData {
       history: [],
       requestedAdjustments: '',
     },
+    snapshots: [],
     createdAt: now,
     updatedAt: now,
   };
 }
 
 /**
+ * 根据单个供应商报价 + 数量，计算最终总价（考虑 quoteType + taxIncluded）
+ * @param quantity: 费用项数量（quoteType=unit 时会乘上）
+ */
+export function calcSupplierFinal(
+  s: SupplierInfo,
+  quantity: number = 1,
+  adjustmentsTaxRate: number = 6,
+): { finalTotal: number; baseTotal: number; unitMode: boolean; taxIncluded: boolean } {
+  const baseQty = Math.max(1, quantity);
+  const base = s.quoteType === 'unit' ? s.quoteAmount * baseQty : s.quoteAmount;
+  const finalTotal = s.taxIncluded
+    ? base
+    : base * (1 + (s.applicableTaxRate || adjustmentsTaxRate) / 100);
+  return {
+    finalTotal,
+    baseTotal: base,
+    unitMode: s.quoteType === 'unit',
+    taxIncluded: s.taxIncluded,
+  };
+}
+
+/**
  * 计算单项小计：优先使用选中的供应商报价，否则按基准单价×系数
+ *
+ * 返回扩展信息以便避免重复计税：
+ *  - subtotal:        此项目的总价（用于汇总 pretaxTotal，不含服务费率）
+ *  - taxablePortion:  此项目中需要参与全单计税的部分（不含税报价 or 基准估算）
+ *  - nonTaxablePortion:此项目中已含税、不再重复计税的部分（供应商含税报价）
  */
 export function calcItemSubtotal(
   item: CostItem,
@@ -204,27 +235,56 @@ export function calcItemSubtotal(
   category: CostCategory,
   suppliers: SupplierInfo[] = [],
   adjustmentsTaxRate: number,
-): { subtotal: number; fromSupplier: boolean; supplier?: SupplierInfo } {
+): {
+  subtotal: number;
+  taxablePortion: number;
+  nonTaxablePortion: number;
+  fromSupplier: boolean;
+  supplier?: SupplierInfo;
+} {
   // 1. 优先使用选中的供应商报价
   if (item.selectedSupplierId) {
     const supplier = suppliers.find((s) => s.id === item.selectedSupplierId);
     if (supplier) {
-      let amount = supplier.quoteAmount;
-      // 不含税报价需要加上税
-      if (!supplier.taxIncluded) {
-        amount = amount * (1 + (supplier.applicableTaxRate || adjustmentsTaxRate) / 100);
+      // 根据报价类型计算基础金额（total 直接用；unit 乘当前数量）
+      let base = supplier.quoteAmount;
+      if (supplier.quoteType === 'unit') {
+        base = base * Math.max(1, item.quantity);
       }
-      return {
-        subtotal: amount,
-        fromSupplier: true,
-        supplier,
-      };
+
+      if (supplier.taxIncluded) {
+        // 含税报价：直接作为总计的一部分（nonTaxablePortion，不参与整体 tax 累加）
+        return {
+          subtotal: base,
+          taxablePortion: 0,
+          nonTaxablePortion: base,
+          fromSupplier: true,
+          supplier,
+        };
+      } else {
+        // 不含税报价：加上税，但作为应纳税部分参与整体（或先单独加税都放 taxablePortion）
+        // 为统一流程，将不含税折算后的金额作为 taxablePortion（会再乘全局税率）
+        const taxed = base * (1 + (supplier.applicableTaxRate || adjustmentsTaxRate) / 100);
+        return {
+          subtotal: taxed,
+          taxablePortion: base, // 不含税的报价本金 —— 整体计税时会再乘全局税率
+          nonTaxablePortion: 0,
+          fromSupplier: true,
+          supplier,
+        };
+      }
     }
   }
 
-  // 2. 否则使用基准单价计算
+  // 2. 否则使用基准单价计算（默认视为不含税估算，会参与整体计税）
   const price = calcDisplayPrice(item.basePrice, cityTier, plan, category);
-  return { subtotal: price * item.quantity, fromSupplier: false };
+  const subtotal = price * item.quantity;
+  return {
+    subtotal,
+    taxablePortion: subtotal,
+    nonTaxablePortion: 0,
+    fromSupplier: false,
+  };
 }
 
 export function calculateBudget(data: BudgetData): CalculationResult {
@@ -232,6 +292,8 @@ export function calculateBudget(data: BudgetData): CalculationResult {
   const categories: CostCategory[] = ['venue', 'catering', 'materials', 'transport', 'personnel', 'contingency'];
 
   let supplierDelta = 0;
+  let globalTaxableBase = 0; // 所有应纳税部分的小计（不含税估算 + 不含税供应商报价）
+  let globalNonTaxableBase = 0; // 已含税、不再计税的部分（供应商含税报价）
 
   const categoryTotals: CategoryTotal[] = categories.map((cat) => {
     const items = costs[cat];
@@ -239,6 +301,8 @@ export function calculateBudget(data: BudgetData): CalculationResult {
     items.forEach((item) => {
       const r = calcItemSubtotal(item, basic.cityTier, currentPlan, cat, suppliers[cat], adjustments.taxRate);
       subtotal += r.subtotal;
+      globalTaxableBase += r.taxablePortion;
+      globalNonTaxableBase += r.nonTaxablePortion;
       // 计算与原始估算的差异（如果用了供应商报价）
       if (r.fromSupplier) {
         const original = calcDisplayPrice(item.basePrice, basic.cityTier, currentPlan, cat) * item.quantity;
@@ -253,7 +317,7 @@ export function calculateBudget(data: BudgetData): CalculationResult {
     };
   });
 
-  // 自动计提备用金逻辑
+  // 自动计提备用金逻辑（备用金视为应纳税估算）
   const fiveCatTotal = categoryTotals
     .filter((c) => c.category !== 'contingency')
     .reduce((s, c) => s + c.subtotal, 0);
@@ -265,11 +329,13 @@ export function calculateBudget(data: BudgetData): CalculationResult {
     if (contItem && contItem.basePrice === 0) {
       const suggested = fiveCatTotal * (adjustments.contingencyRate / 100);
       categoryTotals[contingencyIdx] = { ...cont, subtotal: suggested };
+      globalTaxableBase += suggested;
     }
   }
 
   const pretaxTotal = categoryTotals.reduce((s, c) => s + c.subtotal, 0);
-  const tax = pretaxTotal * (adjustments.taxRate / 100);
+  // 关键修复：仅对「应纳税部分」计税，供应商含税报价（nonTaxablePortion）不再重复计税
+  const tax = globalTaxableBase * (adjustments.taxRate / 100);
   const serviceFee = pretaxTotal * (adjustments.serviceRate / 100);
   const grandTotal = pretaxTotal + tax + serviceFee;
   const perPersonCost = basic.peopleCount > 0 ? grandTotal / basic.peopleCount : 0;
@@ -536,6 +602,7 @@ export function normalizeBudgetData(raw: any): BudgetData {
         phone: s.phone || '',
         email: s.email || '',
         quoteDate: s.quoteDate || new Date().toISOString().slice(0, 10),
+        quoteType: s.quoteType || 'total',
         quoteAmount: typeof s.quoteAmount === 'number' ? s.quoteAmount : 0,
         quoteUnit: s.quoteUnit || s.unit || '元/次',
         taxIncluded: typeof s.taxIncluded === 'boolean' ? s.taxIncluded : true,
@@ -543,6 +610,7 @@ export function normalizeBudgetData(raw: any): BudgetData {
         isRecommended: !!s.isRecommended,
         validUntil: s.validUntil || '',
         attachmentUrl: s.attachmentUrl || '',
+        attachmentName: s.attachmentName || '',
         rating: typeof s.rating === 'number' ? Math.max(1, Math.min(5, s.rating)) : 3,
         internalNotes: s.internalNotes || '',
         notes: s.notes || '',
@@ -557,6 +625,7 @@ export function normalizeBudgetData(raw: any): BudgetData {
   const confirmation = raw.confirmation
     ? {
         status: raw.confirmation.status || 'pending',
+        version: typeof raw.confirmation.version === 'number' ? raw.confirmation.version : 1,
         confirmedBy: raw.confirmation.confirmedBy || '',
         confirmedPhone: raw.confirmation.confirmedPhone || '',
         confirmedAt: raw.confirmation.confirmedAt || '',
@@ -580,6 +649,7 @@ export function normalizeBudgetData(raw: any): BudgetData {
     },
     suppliers,
     confirmation,
+    snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : [],
     createdAt: raw.createdAt || def.createdAt,
     updatedAt: new Date().toISOString(),
   };

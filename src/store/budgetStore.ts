@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   BudgetData,
+  BudgetSnapshot,
   CostCategory,
   CostItem,
   PlanType,
@@ -8,8 +9,11 @@ import {
   SupplierInfo,
   ConfirmationStatus,
   ConfirmationRecord,
+  CATEGORY_LABELS,
 } from '@/types';
 import {
+  calculateBudget,
+  calcItemSubtotal,
   createDefaultBudget,
   createDefaultCostItem,
   createDefaultSupplier,
@@ -27,6 +31,8 @@ interface BudgetStore {
   /** 比价模式：当前在哪个费用项上打开比价面板 */
   compareItemId: { category: CostCategory; itemId: string } | null;
   previewMode: 'full' | 'simple' | 'client';
+  /** 附件清单视图是否打开 */
+  showAttachmentGallery: boolean;
   touchUpdatedAt: () => void;
   setBasic: <K extends keyof BudgetData['basic']>(
     key: K,
@@ -64,6 +70,7 @@ interface BudgetStore {
   setActiveSupplierCategory: (cat: CostCategory | null) => void;
   openComparePanel: (category: CostCategory, itemId: string) => void;
   closeComparePanel: () => void;
+  setShowAttachmentGallery: (open: boolean) => void;
   updateConfirmation: (
     updates: Partial<BudgetData['confirmation']> & {
       addHistory?: {
@@ -91,6 +98,11 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   activeSupplierCategory: null,
   compareItemId: null,
   previewMode: 'full',
+  showAttachmentGallery: false,
+
+  setShowAttachmentGallery: (open) => {
+    set({ showAttachmentGallery: open });
+  },
 
   touchUpdatedAt: () => {
     set((state) => ({
@@ -284,6 +296,8 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   updateConfirmation: ({ addHistory, ...updates }) => {
     set((state) => {
       const newConf = { ...state.data.confirmation, ...updates };
+
+      // 如果有历史记录追加（状态变更时触发）
       if (addHistory) {
         const record: ConfirmationRecord = {
           id: generateId(),
@@ -294,10 +308,73 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
           snapshotGrandTotal: addHistory.snapshotGrandTotal,
         };
         newConf.history = [...newConf.history, record];
-        if (addHistory.status === 'confirmed' && !newConf.confirmedAt) {
+
+        // 版本号递增（每次状态流转都 +1，首次从 1 开始）
+        const currentVersion = typeof newConf.version === 'number' ? newConf.version : 1;
+        newConf.version = currentVersion + 1;
+
+        // 每次进入 confirmed 状态时刷新 confirmedAt（包括从 needs_adjustment 回转回来）
+        if (addHistory.status === 'confirmed') {
           newConf.confirmedAt = record.timestamp;
+        } else if (addHistory.status === 'needs_adjustment') {
+          newConf.requestedAdjustments = addHistory.comment || newConf.requestedAdjustments;
         }
+
+        // 自动打预算版本快照
+        const result = calculateBudget(state.data);
+        const snapshotItems: BudgetSnapshot['items'] = [];
+        const catKeys: CostCategory[] = [
+          'venue',
+          'catering',
+          'materials',
+          'transport',
+          'personnel',
+          'contingency',
+        ];
+        catKeys.forEach((cat) => {
+          state.data.costs[cat].forEach((it) => {
+            const r = calcItemSubtotal(
+              it,
+              state.data.basic.cityTier,
+              state.data.currentPlan,
+              cat,
+              state.data.suppliers[cat],
+              state.data.adjustments.taxRate,
+            );
+            snapshotItems.push({
+              category: cat,
+              itemId: it.id,
+              name: it.name,
+              subtotal: r.subtotal,
+            });
+          });
+        });
+        const snapshot: BudgetSnapshot = {
+          id: generateId(),
+          version: newConf.version,
+          status: addHistory.status,
+          timestamp: record.timestamp,
+          operator: addHistory.operator,
+          comment: addHistory.comment,
+          grandTotal: result.grandTotal,
+          pretaxTotal: result.pretaxTotal,
+          categoryTotals: result.categoryTotals.map((c) => ({
+            category: c.category,
+            name: CATEGORY_LABELS[c.category],
+            subtotal: c.subtotal,
+          })),
+          items: snapshotItems,
+        };
+        return {
+          data: {
+            ...state.data,
+            confirmation: newConf,
+            snapshots: [...state.data.snapshots, snapshot],
+            updatedAt: new Date().toISOString(),
+          },
+        };
       }
+
       return {
         data: {
           ...state.data,
@@ -361,7 +438,12 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   },
 
   resetBudget: () => {
-    set({ data: createDefaultBudget(), compareItemId: null, activeSupplierCategory: null });
+    set({
+      data: createDefaultBudget(),
+      compareItemId: null,
+      activeSupplierCategory: null,
+      showAttachmentGallery: false,
+    });
   },
 
   replaceBudget: (rawData) => {

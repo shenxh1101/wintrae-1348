@@ -69,9 +69,11 @@ export default function ComparePanel() {
   };
 
   const calcSupplierFinal = (s: SupplierInfo): number => {
+    const baseQty = Math.max(1, item.quantity);
+    const base = s.quoteType === 'unit' ? s.quoteAmount * baseQty : s.quoteAmount;
     return s.taxIncluded
-      ? s.quoteAmount
-      : s.quoteAmount * (1 + (s.applicableTaxRate || data.adjustments.taxRate) / 100);
+      ? base
+      : base * (1 + (s.applicableTaxRate || data.adjustments.taxRate) / 100);
   };
 
   const checkValid = (s: SupplierInfo): { valid: boolean; label: string; color: string } => {
@@ -195,6 +197,20 @@ export default function ComparePanel() {
                       <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-navy-50 text-navy-600 font-mono-num">
                         #{idx + 1}
                       </span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium ${
+                          s.quoteType === 'unit'
+                            ? 'bg-sky-50 text-sky-700'
+                            : 'bg-violet-50 text-violet-700'
+                        }`}
+                      >
+                        {s.quoteType === 'unit' ? '单价报价' : '总价报价'}
+                      </span>
+                      {s.taxIncluded && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-sm font-medium bg-emerald-50 text-emerald-700">
+                          已含税
+                        </span>
+                      )}
                     </div>
 
                     <div className="mt-2.5 grid grid-cols-2 gap-2.5 text-xs">
@@ -250,9 +266,45 @@ export default function ComparePanel() {
                     </div>
 
                     <div className="mt-2.5 p-2.5 bg-cream/60 border border-stone2 rounded-sm">
-                      <div className="grid grid-cols-2 gap-2.5 text-xs mb-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[11px] text-navy-500">报价类型：</span>
+                        <div className="inline-flex rounded-sm overflow-hidden border border-stone2 text-[11px]">
+                          <button
+                            onClick={() =>
+                              updateSupplier(category as CostCategory, s.id, 'quoteType', 'total')
+                            }
+                            className={`px-2.5 py-1 ${
+                              s.quoteType === 'total'
+                                ? 'bg-violet-600 text-white'
+                                : 'bg-white text-navy-600 hover:bg-violet-50'
+                            }`}
+                          >
+                            总价
+                          </button>
+                          <button
+                            onClick={() =>
+                              updateSupplier(category as CostCategory, s.id, 'quoteType', 'unit')
+                            }
+                            className={`px-2.5 py-1 border-l border-stone2 ${
+                              s.quoteType === 'unit'
+                                ? 'bg-sky-600 text-white'
+                                : 'bg-white text-navy-600 hover:bg-sky-50'
+                            }`}
+                          >
+                            单价
+                          </button>
+                        </div>
+                        {s.quoteType === 'unit' && (
+                          <span className="text-[10px] text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded-sm ml-auto">
+                            会按数量 {item.quantity} 自动折算
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5 text-xs">
                         <div>
-                          <label className="block text-navy-400 mb-0.5">报价金额</label>
+                          <label className="block text-navy-400 mb-0.5">
+                            {s.quoteType === 'unit' ? '单价金额' : '总价金额'}
+                          </label>
                           <div className="flex items-center gap-1">
                             <span className="text-navy-500">¥</span>
                             <input
@@ -289,7 +341,7 @@ export default function ComparePanel() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="grid grid-cols-3 gap-2 text-xs mt-2">
                         <label className="flex items-center gap-1.5 cursor-pointer select-none p-1.5 rounded-sm hover:bg-white/60">
                           <input
                             type="checkbox"
@@ -352,7 +404,7 @@ export default function ComparePanel() {
                         <div className="flex items-center justify-between">
                           <div>
                             <span className="text-[11px] text-navy-500">
-                              折算含税总价：
+                              折算含税总价{s.quoteType === 'unit' ? `(×${item.quantity})` : ''}：
                             </span>
                             <span className="font-mono-num text-sm font-bold text-navy-800 ml-1">
                               {formatCurrency(final)}

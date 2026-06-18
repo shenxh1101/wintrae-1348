@@ -10,6 +10,7 @@ import ConfirmationSection from '@/components/ConfirmationSection';
 import ExportSection from '@/components/ExportSection';
 import SupplierDrawer from '@/components/SupplierDrawer';
 import ComparePanel from '@/components/ComparePanel';
+import AttachmentGallery from '@/components/AttachmentGallery';
 import { useBudgetStore } from '@/store/budgetStore';
 
 export default function Home() {
@@ -46,6 +47,7 @@ export default function Home() {
       </div>
       <SupplierDrawer />
       <ComparePanel />
+      <AttachmentGallery />
     </div>
   );
 }
