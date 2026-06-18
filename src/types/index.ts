@@ -10,16 +10,23 @@ export interface BasicInfo {
   cityTier: CityTier;
   targetBudget: number;
   companyName: string;
+  clientName: string;
+  clientContact: string;
 }
 
 export interface CostItem {
   id: string;
   name: string;
-  unitPrice: number;
+  /** 基准单价：二线城市(t2) + 标准方案(standard)下的原始单价，切换档位/方案时不变 */
+  basePrice: number;
+  /** 数量 */
   quantity: number;
   unit: string;
   remark: string;
+  internalNote: string;
   isCustom: boolean;
+  /** 选中的供应商报价ID（可选） */
+  selectedSupplierId?: string;
 }
 
 export type CostCategory = 'venue' | 'catering' | 'materials' | 'transport' | 'personnel' | 'contingency';
@@ -44,10 +51,63 @@ export interface SupplierInfo {
   name: string;
   contact: string;
   phone: string;
+  email: string;
   quoteDate: string;
+  /** 报价金额（总价，或按单位计价） */
   quoteAmount: number;
+  /** 报价计价单位 */
+  quoteUnit: string;
+  /** 是否为含税报价 */
+  taxIncluded: boolean;
+  /** 对应税率（当 taxIncluded=false 时适用） */
+  applicableTaxRate: number;
+  /** 是否为推荐供应商 */
+  isRecommended: boolean;
+  /** 报价有效期至 */
+  validUntil: string;
+  /** 附件链接（如报价单PDF） */
+  attachmentUrl: string;
+  /** 综合评分 1-5 */
+  rating: number;
+  /** 内部备注（不显示给客户） */
+  internalNotes: string;
+  /** 可提供的服务范围描述 */
   notes: string;
   category: CostCategory;
+  /** 关联的费用项目ID */
+  relatedItemIds: string[];
+}
+
+export type ConfirmationStatus = 'pending' | 'confirmed' | 'needs_adjustment';
+
+export interface ConfirmationRecord {
+  id: string;
+  status: ConfirmationStatus;
+  timestamp: string;
+  operator: string;
+  comment: string;
+  /** 当时的预算快照总额 */
+  snapshotGrandTotal: number;
+  /** 客户反馈的需要调整项 */
+  adjustmentItems?: string[];
+}
+
+export interface ClientConfirmation {
+  status: ConfirmationStatus;
+  /** 客户名称 */
+  confirmedBy: string;
+  /** 联系电话 */
+  confirmedPhone: string;
+  /** 确认时间 */
+  confirmedAt: string;
+  /** 确认备注（客户可见） */
+  comment: string;
+  /** 内部备注（客户不可见） */
+  internalNote: string;
+  /** 确认历史记录 */
+  history: ConfirmationRecord[];
+  /** 客户回复的需要调整的具体项 */
+  requestedAdjustments: string;
 }
 
 export interface BudgetData {
@@ -56,6 +116,11 @@ export interface BudgetData {
   costs: CostData;
   adjustments: Adjustments;
   suppliers: Record<CostCategory, SupplierInfo[]>;
+  confirmation: ClientConfirmation;
+  /** 创建时间 */
+  createdAt: string;
+  /** 最后更新时间 */
+  updatedAt: string;
 }
 
 export interface CategoryTotal {
@@ -74,12 +139,14 @@ export interface CalculationResult {
   perPersonCost: number;
   budgetRemaining: number;
   budgetUsedPercent: number;
+  /** 已选中的供应商报价节省/超支金额（与原始估算对比） */
+  supplierDelta: number;
 }
 
 export interface RiskItem {
   id: string;
   level: 'high' | 'medium' | 'low';
-  type: 'over_budget' | 'missing' | 'anomaly' | 'general';
+  type: 'over_budget' | 'missing' | 'anomaly' | 'general' | 'supplier';
   title: string;
   description: string;
   relatedCategory?: CostCategory;
@@ -97,6 +164,18 @@ export interface TemplateStorage {
   templates: SavedTemplate[];
   lastUsed: string | null;
 }
+
+export const CONFIRMATION_STATUS_LABELS: Record<ConfirmationStatus, string> = {
+  pending: '待客户确认',
+  confirmed: '客户已确认',
+  needs_adjustment: '需调整后重审',
+};
+
+export const CONFIRMATION_STATUS_COLORS: Record<ConfirmationStatus, string> = {
+  pending: 'warning',
+  confirmed: 'success',
+  needs_adjustment: 'danger',
+};
 
 export const CATEGORY_LABELS: Record<CostCategory, string> = {
   venue: '场地费用',

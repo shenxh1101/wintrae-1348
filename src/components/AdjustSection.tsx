@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useBudgetStore } from '@/store/budgetStore';
 import {
+  calculateBudget,
   exportJSON,
   formatCurrency,
   importJSON,
@@ -320,41 +321,6 @@ export default function AdjustSection() {
 }
 
 function calculateSum(data: any): number {
-  const cats: any[] = ['venue', 'catering', 'materials', 'transport', 'personnel', 'contingency'];
-  let pretax = 0;
-  const cityMult =
-    data.basic.cityTier === 't1'
-      ? 1.4
-      : data.basic.cityTier === 't1n'
-      ? 1.2
-      : data.basic.cityTier === 't2'
-      ? 1.0
-      : 0.8;
-  const planMult =
-    data.currentPlan === 'conservative' ? 1.3 : data.currentPlan === 'lean' ? 0.75 : 1.0;
-  const catTotals: any = {};
-
-  cats.forEach((cat) => {
-    let sub = 0;
-    data.costs[cat].forEach((item: any) => {
-      if (cat === 'contingency') {
-        sub += item.unitPrice * item.quantity;
-      } else {
-        sub += item.unitPrice * item.quantity * cityMult * planMult;
-      }
-    });
-    catTotals[cat] = sub;
-    pretax += sub;
-  });
-
-  const first5 = cats
-    .filter((c) => c !== 'contingency')
-    .reduce((s, c) => s + catTotals[c], 0);
-  const contItem = data.costs.contingency[0];
-  if (contItem && contItem.unitPrice === 0) {
-    const newCont = first5 * (data.adjustments.contingencyRate / 100);
-    pretax = first5 + newCont;
-  }
-
-  return pretax;
+  const result = calculateBudget(data);
+  return result.pretaxTotal;
 }

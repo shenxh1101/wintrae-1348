@@ -10,15 +10,21 @@ import {
   ChevronRight,
   Plus,
   Trash2,
-  Calculator,
   FileCheck,
+  Calculator,
+  Tag,
+  Shield,
+  Building,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useBudgetStore } from '@/store/budgetStore';
 import {
   calculateBudget,
-  calcItemSubtotal,
+  calcDisplayPrice,
   formatCurrency,
   formatNumber,
+  reverseBasePrice,
+  calcItemSubtotal as utilCalcItemSubtotal,
 } from '@/utils/calculations';
 import {
   CATEGORY_COLORS,
@@ -45,7 +51,18 @@ const COST_CATEGORIES: CostCategory[] = [
   'contingency',
 ];
 
-const UNIT_OPTIONS = ['元/人', '元/小时', '元/天', '元/次', '元/桌', '元/辆', '元/份', '元/场', '元/批', '元/套'];
+const UNIT_OPTIONS = [
+  '元/人',
+  '元/小时',
+  '元/天',
+  '元/次',
+  '元/桌',
+  '元/辆',
+  '元/份',
+  '元/场',
+  '元/批',
+  '元/套',
+];
 
 interface CostCardProps {
   category: CostCategory;
@@ -60,18 +77,35 @@ function CostCategoryCard({ category }: CostCardProps) {
   const addCostItem = useBudgetStore((s) => s.addCostItem);
   const removeCostItem = useBudgetStore((s) => s.removeCostItem);
   const setActiveSupplierCategory = useBudgetStore((s) => s.setActiveSupplierCategory);
+  const openComparePanel = useBudgetStore((s) => s.openComparePanel);
+  const selectSupplierForItem = useBudgetStore((s) => s.selectSupplierForItem);
   const suppliers = useBudgetStore((s) => s.data.suppliers[category]);
 
   const catTotal = result.categoryTotals.find((c) => c.category === category)?.subtotal || 0;
   const Icon = CATEGORY_ICONS_COMP[category];
   const color = CATEGORY_COLORS[category];
 
-  const calcItemTotal = (item: CostItem) => {
-    if (category === 'contingency') {
-      if (item.unitPrice === 0 && item.name === '应急备用金') return catTotal * 0 + 0;
-      return item.unitPrice * item.quantity;
-    }
-    return calcItemSubtotal(item, data.basic.cityTier, data.currentPlan);
+  /** 计算单项小计（优先供应商报价） */
+  const calcItemResult = (item: CostItem) => {
+    return utilCalcItemSubtotal(
+      item,
+      data.basic.cityTier,
+      data.currentPlan,
+      category,
+      suppliers,
+      data.adjustments.taxRate,
+    );
+  };
+
+  /** 用户编辑显示单价 → 反推写回 basePrice（以当前档位/方案为基准） */
+  const handleDisplayPriceChange = (item: CostItem, displayPrice: number) => {
+    const newBase = reverseBasePrice(
+      displayPrice,
+      data.basic.cityTier,
+      data.currentPlan,
+      category,
+    );
+    updateCostItem(category, item.id, 'basePrice', Math.round(newBase * 100) / 100);
   };
 
   const handleAddItem = () => {
@@ -80,6 +114,15 @@ function CostCategoryCard({ category }: CostCardProps) {
       addCostItem(category, name.trim());
     }
   };
+
+  /** 获取显示单价：基准价格 × 系数，备用金不乘 */
+  const getDisplayPrice = (item: CostItem): number => {
+    return calcDisplayPrice(item.basePrice, data.basic.cityTier, data.currentPlan, category);
+  };
+
+  /** 计算选中供应商的占比数量，用于展示进度 */
+  const supplierCount = suppliers.length;
+  const itemsUsingSupplier = items.filter((i) => i.selectedSupplierId).length;
 
   return (
     <div id={`cat-${category}`} className="card-base overflow-hidden scroll-mt-28">
@@ -94,29 +137,41 @@ function CostCategoryCard({ category }: CostCardProps) {
           <Icon className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-serif text-base font-semibold text-navy-800">
               {CATEGORY_LABELS[category]}
             </h3>
             <span className="text-xs px-2 py-0.5 rounded-sm bg-navy-50 text-navy-600">
               {items.length} 项
             </span>
-            {suppliers.length > 0 && (
-              <span className="text-xs px-2 py-0.5 rounded-sm bg-gold-50 text-gold-600">
-                <FileCheck className="w-3 h-3 inline align-[-1px] mr-1" />
-                {suppliers.length} 份报价
+            {supplierCount > 0 && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-sm flex items-center gap-1 ${
+                  itemsUsingSupplier > 0
+                    ? 'bg-gold-100 text-gold-700'
+                    : 'bg-navy-50 text-navy-600'
+                }`}
+              >
+                <FileSpreadsheet className="w-3 h-3" />
+                {supplierCount} 份报价
+                {itemsUsingSupplier > 0 && (
+                  <span className="ml-0.5">· 已采用 {itemsUsingSupplier}</span>
+                )}
+              </span>
+            )}
+            {category === 'contingency' && (
+              <span className="text-[11px] text-navy-400">
+                应急备用金设为 0 时，自动按前五项合计 × {data.adjustments.contingencyRate}% 计提
               </span>
             )}
           </div>
-          {category === 'contingency' && (
-            <p className="text-xs text-navy-500 mt-0.5">
-              如应急备用金为 0 元，将自动按前五项合计 × {data.adjustments.contingencyRate}% 计提
-            </p>
-          )}
         </div>
         <div className="text-right mr-4 shrink-0">
           <p className="text-xs text-navy-500">合计</p>
-          <p className="font-mono-num text-lg font-semibold" style={{ color }}>
+          <p
+            className="font-mono-num text-lg font-semibold"
+            style={{ color }}
+          >
             {formatCurrency(catTotal)}
           </p>
         </div>
@@ -133,11 +188,17 @@ function CostCategoryCard({ category }: CostCardProps) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-cream/60 text-navy-600 text-xs">
-                  <th className="text-left font-medium px-5 py-2.5 w-[28%]">项目名称</th>
-                  <th className="text-right font-medium px-3 py-2.5 w-[15%]">单价</th>
-                  <th className="text-right font-medium px-3 py-2.5 w-[10%]">数量</th>
-                  <th className="text-center font-medium px-3 py-2.5 w-[14%]">计价单位</th>
-                  <th className="text-left font-medium px-3 py-2.5 w-[18%]">备注</th>
+                  <th className="text-left font-medium px-5 py-2.5 w-[22%]">项目名称</th>
+                  <th className="text-right font-medium px-3 py-2.5 w-[11%]">
+                    显示单价
+                    <span className="block text-[10px] font-normal text-navy-400 mt-0.5">
+                      (基准价×系数)
+                    </span>
+                  </th>
+                  <th className="text-right font-medium px-3 py-2.5 w-[7%]">数量</th>
+                  <th className="text-center font-medium px-3 py-2.5 w-[11%]">计价单位</th>
+                  <th className="text-center font-medium px-3 py-2.5 w-[9%]">供应商</th>
+                  <th className="text-left font-medium px-3 py-2.5 w-[15%]">备注</th>
                   <th className="text-right font-medium px-5 py-2.5 w-[12%]">
                     <span className="flex items-center gap-1 justify-end">
                       <Calculator className="w-3 h-3" />
@@ -149,46 +210,78 @@ function CostCategoryCard({ category }: CostCardProps) {
               </thead>
               <tbody>
                 {items.map((item, idx) => {
-                  const subtotal =
-                    category === 'contingency' && item.unitPrice === 0 && item.name === '应急备用金'
-                      ? catTotal * 0
-                      : calcItemTotal(item);
-                  const isRiskHigh = data.basic.targetBudget > 0 &&
+                  const r = calcItemResult(item);
+                  let showSubtotal = r.subtotal;
+                  if (category === 'contingency' && idx === 0 && item.basePrice === 0) {
+                    const five = COST_CATEGORIES.filter((c) => c !== 'contingency').reduce(
+                      (s, c) =>
+                        s +
+                        (result.categoryTotals.find((x) => x.category === c)?.subtotal || 0),
+                      0,
+                    );
+                    showSubtotal = five * (data.adjustments.contingencyRate / 100);
+                  }
+
+                  const displayPrice = getDisplayPrice(item);
+                  const isRiskHigh =
+                    data.basic.targetBudget > 0 &&
                     category !== 'contingency' &&
-                    subtotal > data.basic.targetBudget * 0.3;
+                    showSubtotal > data.basic.targetBudget * 0.3;
+
+                  const currentSupplier = r.fromSupplier ? r.supplier : null;
+
                   return (
                     <tr
                       key={item.id}
                       className={`border-t border-stone2/60 hover:bg-navy-50/30 transition-colors ${
                         isRiskHigh ? 'bg-red-50/40' : ''
-                      }`}
+                      } ${r.fromSupplier ? 'bg-gold-50/30' : ''}`}
                     >
                       <td className="px-5 py-2.5">
                         <input
                           type="text"
                           value={item.name}
-                          onChange={(e) => updateCostItem(category, item.id, 'name', e.target.value)}
+                          onChange={(e) =>
+                            updateCostItem(category, item.id, 'name', e.target.value)
+                          }
                           className="w-full bg-transparent focus:outline-none focus:bg-white focus:border focus:border-gold-300 rounded-sm px-1 py-0.5 -ml-1 text-navy-800 font-medium"
                         />
                       </td>
                       <td className="px-3 py-2.5 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <span className="text-navy-400 text-xs">¥</span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={item.unitPrice}
-                            onChange={(e) =>
-                              updateCostItem(
-                                category,
-                                item.id,
-                                'unitPrice',
-                                Math.max(0, parseFloat(e.target.value) || 0),
-                              )
-                            }
-                            className="w-24 bg-transparent text-right focus:outline-none focus:bg-white focus:border focus:border-gold-300 rounded-sm px-1 py-0.5 font-mono-num text-navy-800"
-                          />
-                        </div>
+                        {r.fromSupplier ? (
+                          <div className="inline-block text-right">
+                            <div className="text-[11px] text-gold-600 font-medium flex items-center justify-end gap-1">
+                              <Shield className="w-3 h-3" />
+                              供应商价
+                            </div>
+                            <div
+                              className="font-mono-num font-semibold text-gold-700 cursor-help"
+                              title={`供应商「${currentSupplier?.name || ''}」报价`}
+                            >
+                              {formatCurrency(
+                                (currentSupplier?.quoteAmount || 0) /
+                                  Math.max(1, item.quantity),
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-1">
+                            <span className="text-navy-400 text-xs">¥</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={displayPrice.toFixed(2)}
+                              onChange={(e) =>
+                                handleDisplayPriceChange(
+                                  item,
+                                  Math.max(0, parseFloat(e.target.value) || 0),
+                                )
+                              }
+                              className="w-24 bg-transparent text-right focus:outline-none focus:bg-white focus:border focus:border-gold-300 rounded-sm px-1 py-0.5 font-mono-num text-navy-800"
+                            />
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         <input
@@ -210,8 +303,11 @@ function CostCategoryCard({ category }: CostCardProps) {
                       <td className="px-3 py-2.5 text-center">
                         <select
                           value={item.unit}
-                          onChange={(e) => updateCostItem(category, item.id, 'unit', e.target.value)}
-                          className="bg-transparent border border-stone2 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-gold-400 text-navy-700"
+                          onChange={(e) =>
+                            updateCostItem(category, item.id, 'unit', e.target.value)
+                          }
+                          disabled={r.fromSupplier}
+                          className="bg-transparent border border-stone2 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-gold-400 text-navy-700 disabled:opacity-60"
                         >
                           <option value={item.unit}>{item.unit}</option>
                           {UNIT_OPTIONS.filter((u) => u !== item.unit).map((u) => (
@@ -221,34 +317,73 @@ function CostCategoryCard({ category }: CostCardProps) {
                           ))}
                         </select>
                       </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <div className="flex justify-center gap-1">
+                          <button
+                            onClick={() => openComparePanel(category, item.id)}
+                            disabled={category === 'contingency'}
+                            className={`px-2 py-1 rounded-sm text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                              r.fromSupplier
+                                ? 'bg-gold-100 text-gold-700 hover:bg-gold-200 border border-gold-300'
+                                : supplierCount > 0
+                                ? 'bg-navy-50 text-navy-600 hover:bg-navy-100 border border-navy-200'
+                                : 'bg-white text-navy-500 hover:bg-navy-50 border border-stone2'
+                            }`}
+                            title={supplierCount > 0 ? `已有 ${supplierCount} 份报价，点击比价并选用` : '录入供应商报价后进行比价'}
+                          >
+                            <Tag className="w-3 h-3" />
+                            {r.fromSupplier
+                              ? currentSupplier?.name
+                                ? currentSupplier.name.slice(0, 6) +
+                                  (currentSupplier.name.length > 6 ? '…' : '')
+                                : '已选用'
+                              : supplierCount > 0
+                              ? `比价(${supplierCount})`
+                              : '比价'}
+                          </button>
+                        </div>
+                        {r.fromSupplier && (
+                          <button
+                            onClick={() => selectSupplierForItem(category, item.id, null)}
+                            className="text-[10px] text-navy-400 hover:text-danger mt-1 block mx-auto"
+                          >
+                            取消
+                          </button>
+                        )}
+                      </td>
                       <td className="px-3 py-2.5">
                         <input
                           type="text"
                           value={item.remark}
-                          placeholder="输入备注..."
-                          onChange={(e) => updateCostItem(category, item.id, 'remark', e.target.value)}
+                          placeholder="客户可见备注..."
+                          onChange={(e) =>
+                            updateCostItem(category, item.id, 'remark', e.target.value)
+                          }
                           className="w-full bg-transparent focus:outline-none focus:bg-white focus:border focus:border-gold-300 rounded-sm px-1 py-0.5 -ml-1 text-navy-600 text-xs placeholder:text-navy-300"
+                        />
+                        <input
+                          type="text"
+                          value={item.internalNote}
+                          placeholder="【内部】仅我方可见..."
+                          onChange={(e) =>
+                            updateCostItem(category, item.id, 'internalNote', e.target.value)
+                          }
+                          className="w-full mt-1 bg-amber-50/40 border border-amber-100 focus:border-gold-300 rounded-sm px-1.5 py-0.5 -ml-1 text-navy-600 text-[11px] placeholder:text-amber-300 focus:outline-none"
                         />
                       </td>
                       <td className="px-5 py-2.5 text-right">
                         <span
                           className={`font-mono-num font-semibold ${
-                            isRiskHigh ? 'text-danger' : 'text-navy-800'
+                            isRiskHigh ? 'text-danger' : r.fromSupplier ? 'text-gold-700' : 'text-navy-800'
                           }`}
                         >
-                          {formatCurrency(
-                            category === 'contingency' &&
-                              idx === 0 &&
-                              item.unitPrice === 0
-                              ? (() => {
-                                  const five = result.categoryTotals
-                                    .filter((c) => c.category !== 'contingency')
-                                    .reduce((s, c) => s + c.subtotal, 0);
-                                  return five * (data.adjustments.contingencyRate / 100);
-                                })()
-                              : subtotal,
-                          )}
+                          {formatCurrency(showSubtotal)}
                         </span>
+                        {r.fromSupplier && (
+                          <div className="text-[10px] text-gold-600 mt-0.5">
+                            供应商报价
+                          </div>
+                        )}
                       </td>
                       <td className="px-1 py-2.5 text-center">
                         {item.isCustom ? (
@@ -267,11 +402,14 @@ function CostCategoryCard({ category }: CostCardProps) {
               </tbody>
               <tfoot>
                 <tr className="bg-cream/40 border-t-2 border-stone2 font-medium">
-                  <td colSpan={5} className="px-5 py-3 text-right text-navy-700">
+                  <td colSpan={6} className="px-5 py-3 text-right text-navy-700">
                     {CATEGORY_LABELS[category]} 小计：
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <span className="font-mono-num text-lg font-bold" style={{ color }}>
+                    <span
+                      className="font-mono-num text-lg font-bold"
+                      style={{ color }}
+                    >
                       {formatCurrency(catTotal)}
                     </span>
                   </td>
@@ -281,7 +419,7 @@ function CostCategoryCard({ category }: CostCardProps) {
             </table>
           </div>
 
-          <div className="flex items-center justify-between px-5 py-3 border-t border-stone2 bg-cream/30">
+          <div className="flex items-center justify-between px-5 py-3 border-t border-stone2 bg-cream/30 flex-wrap gap-2">
             <button
               onClick={handleAddItem}
               className="btn-ghost flex items-center gap-1.5 text-navy-600"
@@ -289,13 +427,25 @@ function CostCategoryCard({ category }: CostCardProps) {
               <Plus className="w-3.5 h-3.5" />
               添加自定义项目
             </button>
-            <button
-              onClick={() => setActiveSupplierCategory(category)}
-              className="btn-ghost flex items-center gap-1.5 text-gold-600 hover:text-gold-700 hover:bg-gold-50"
-            >
-              <FileCheck className="w-3.5 h-3.5" />
-              供应商报价 ({suppliers.length})
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openComparePanel(category, items[0]?.id || 'dummy')}
+                className={`btn-ghost flex items-center gap-1.5 ${supplierCount > 0 ? 'text-gold-600 hover:text-gold-700 hover:bg-gold-50' : 'text-navy-600'}`}
+                disabled={items.length === 0}
+                title="直接打开比价面板，录入多家报价"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                比价管理 ({supplierCount})
+              </button>
+              <button
+                onClick={() => setActiveSupplierCategory(category)}
+                className="btn-ghost flex items-center gap-1.5 text-navy-600 hover:bg-navy-50"
+                title="以列表形式批量管理该类别的所有供应商报价"
+              >
+                <Building className="w-3.5 h-3.5" />
+                供应商列表
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -306,11 +456,17 @@ function CostCategoryCard({ category }: CostCardProps) {
 export default function CostSection() {
   return (
     <section id="section-cost" className="space-y-4 scroll-mt-28">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="section-title !border-0 !pb-0">费用明细</h2>
-        <span className="text-xs text-navy-500 font-mono-num">
-          共 {formatNumber(COST_CATEGORIES.length)} 大类，实时自动计算
-        </span>
+        <div className="text-xs text-navy-500 flex items-center gap-3">
+          <span>
+            <Tag className="w-3.5 h-3.5 inline align-[-2px] mr-1 text-gold-500" />
+            每行可录入多家供应商比价，直接选用报价代入预算
+          </span>
+          <span className="font-mono-num">
+            共 {formatNumber(COST_CATEGORIES.length)} 大类
+          </span>
+        </div>
       </div>
       {COST_CATEGORIES.map((cat) => (
         <CostCategoryCard key={cat} category={cat} />

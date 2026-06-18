@@ -6,8 +6,10 @@ import CostSection from '@/components/CostSection';
 import PlanSection from '@/components/PlanSection';
 import RiskSection from '@/components/RiskSection';
 import AdjustSection from '@/components/AdjustSection';
+import ConfirmationSection from '@/components/ConfirmationSection';
 import ExportSection from '@/components/ExportSection';
 import SupplierDrawer from '@/components/SupplierDrawer';
+import ComparePanel from '@/components/ComparePanel';
 import { useBudgetStore } from '@/store/budgetStore';
 
 export default function Home() {
@@ -30,6 +32,7 @@ export default function Home() {
             <PlanSection />
             <RiskSection />
             <AdjustSection />
+            <ConfirmationSection />
             <ExportSection />
 
             <footer className="pt-10 pb-4 text-center">
@@ -42,6 +45,7 @@ export default function Home() {
         </div>
       </div>
       <SupplierDrawer />
+      <ComparePanel />
     </div>
   );
 }

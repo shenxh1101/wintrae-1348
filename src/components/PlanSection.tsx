@@ -74,9 +74,19 @@ function computePlanTotal(data: any, plan: PlanType) {
     let sub = 0;
     data.costs[cat].forEach((item: any) => {
       if (cat === 'contingency') {
-        sub += item.unitPrice * item.quantity;
+        // 备用金不乘方案系数，直接用 basePrice * quantity
+        sub += item.basePrice * item.quantity;
       } else {
-        sub += calcItemSubtotal(item, data.basic.cityTier, plan);
+        // 使用 calcItemSubtotal 正确处理供应商报价 + 基准价换算
+        const r = calcItemSubtotal(
+          item,
+          data.basic.cityTier,
+          plan,
+          cat,
+          data.suppliers[cat],
+          data.adjustments.taxRate,
+        );
+        sub += r.subtotal;
       }
     });
     cats[cat] = sub;
@@ -89,7 +99,7 @@ function computePlanTotal(data: any, plan: PlanType) {
       0,
     );
     const contItem = data.costs.contingency[0];
-    if (contItem && contItem.unitPrice === 0) {
+    if (contItem && contItem.basePrice === 0) {
       const newCont = first5 * (data.adjustments.contingencyRate / 100);
       cats.contingency = newCont;
       pretax = first5 + newCont;
