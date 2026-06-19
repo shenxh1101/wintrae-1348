@@ -253,15 +253,21 @@ function CostCategoryCard({ category }: CostCardProps) {
                             <div className="text-[11px] text-gold-600 font-medium flex items-center justify-end gap-1">
                               <Shield className="w-3 h-3" />
                               供应商价
+                              {currentSupplier?.quoteType === 'unit' && (
+                                <span className="text-sky-600">·单价</span>
+                              )}
                             </div>
                             <div
                               className="font-mono-num font-semibold text-gold-700 cursor-help"
-                              title={`供应商「${currentSupplier?.name || ''}」报价`}
+                              title={`供应商「${currentSupplier?.name || ''}」报价（${r.isTaxIncluded ? '含税' : '不含税'}）`}
                             >
                               {formatCurrency(
                                 (currentSupplier?.quoteAmount || 0) /
                                   Math.max(1, item.quantity),
                               )}
+                              <span className="text-[10px] font-normal ml-0.5 opacity-70">
+                                {r.isTaxIncluded ? '含' : '未税'}
+                              </span>
                             </div>
                           </div>
                         ) : (
@@ -280,6 +286,7 @@ function CostCategoryCard({ category }: CostCardProps) {
                               }
                               className="w-24 bg-transparent text-right focus:outline-none focus:bg-white focus:border focus:border-gold-300 rounded-sm px-1 py-0.5 font-mono-num text-navy-800"
                             />
+                            <span className="text-[10px] text-navy-400">未税</span>
                           </div>
                         )}
                       </td>
@@ -372,16 +379,22 @@ function CostCategoryCard({ category }: CostCardProps) {
                         />
                       </td>
                       <td className="px-5 py-2.5 text-right">
-                        <span
-                          className={`font-mono-num font-semibold ${
-                            isRiskHigh ? 'text-danger' : r.fromSupplier ? 'text-gold-700' : 'text-navy-800'
-                          }`}
-                        >
-                          {formatCurrency(showSubtotal)}
-                        </span>
+                        <div>
+                          <span
+                            className={`font-mono-num font-semibold ${
+                              isRiskHigh ? 'text-danger' : r.fromSupplier ? 'text-gold-700' : 'text-navy-800'
+                            }`}
+                          >
+                            {formatCurrency(showSubtotal)}
+                          </span>
+                          <span className="text-[10px] font-normal ml-0.5 opacity-70 text-navy-400">
+                            {r.isTaxIncluded ? '含' : '未税'}
+                          </span>
+                        </div>
                         {r.fromSupplier && (
                           <div className="text-[10px] text-gold-600 mt-0.5">
                             供应商报价
+                            {r.supplier?.quoteType === 'unit' && '·单价折算'}
                           </div>
                         )}
                       </td>

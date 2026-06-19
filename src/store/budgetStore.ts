@@ -33,6 +33,8 @@ interface BudgetStore {
   previewMode: 'full' | 'simple' | 'client';
   /** 附件清单视图是否打开 */
   showAttachmentGallery: boolean;
+  /** 抽屉中聚焦的供应商ID（用于从附件清单跳转定位） */
+  focusedSupplierId: string | null;
   touchUpdatedAt: () => void;
   setBasic: <K extends keyof BudgetData['basic']>(
     key: K,
@@ -71,6 +73,9 @@ interface BudgetStore {
   openComparePanel: (category: CostCategory, itemId: string) => void;
   closeComparePanel: () => void;
   setShowAttachmentGallery: (open: boolean) => void;
+  /** 直接打开供应商抽屉并定位到指定供应商 */
+  openSupplierDrawer: (category: CostCategory, supplierId?: string) => void;
+  setFocusedSupplierId: (id: string | null) => void;
   updateConfirmation: (
     updates: Partial<BudgetData['confirmation']> & {
       addHistory?: {
@@ -99,9 +104,22 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   compareItemId: null,
   previewMode: 'full',
   showAttachmentGallery: false,
+  focusedSupplierId: null,
 
   setShowAttachmentGallery: (open) => {
     set({ showAttachmentGallery: open });
+  },
+
+  openSupplierDrawer: (category, supplierId) => {
+    set({
+      activeSupplierCategory: category,
+      focusedSupplierId: supplierId || null,
+      showAttachmentGallery: false,
+    });
+  },
+
+  setFocusedSupplierId: (id) => {
+    set({ focusedSupplierId: id });
   },
 
   touchUpdatedAt: () => {
@@ -443,6 +461,7 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
       compareItemId: null,
       activeSupplierCategory: null,
       showAttachmentGallery: false,
+      focusedSupplierId: null,
     });
   },
 

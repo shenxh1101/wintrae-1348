@@ -85,6 +85,14 @@ export default function ExportSection() {
   const [companyNameForPrint, setCompanyNameForPrint] = useState(data.basic.companyName);
   const confirmation = data.confirmation;
 
+  // 最近一次确认/调整记录
+  const latestRecord = useMemo(() => {
+    if (!confirmation.history.length) return null;
+    return [...confirmation.history].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    )[0];
+  }, [confirmation.history]);
+
   const pieData = {
     labels: COST_CATEGORIES.map((c) => CATEGORY_LABELS[c]),
     datasets: [
@@ -293,7 +301,7 @@ export default function ExportSection() {
                 </p>
               </div>
               <div className="p-4 rounded-sm bg-gold-50 border border-gold-100">
-                <p className="text-xs text-navy-500 mb-1">税前总额</p>
+                <p className="text-xs text-navy-500 mb-1">报价合计</p>
                 <p className="font-mono-num text-2xl font-bold text-gold-700">
                   {formatCurrency(result.pretaxTotal)}
                 </p>
@@ -518,16 +526,30 @@ export default function ExportSection() {
                     <StatusIcon className={`w-5 h-5 ${statusStyles.text}`} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`font-semibold ${statusStyles.text} mb-0.5`}>
-                      {CONFIRMATION_STATUS_LABELS[confirmation.status]}
-                    </p>
+                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                      <p className={`font-semibold ${statusStyles.text}`}>
+                        {CONFIRMATION_STATUS_LABELS[confirmation.status]}
+                      </p>
+                      <span className="text-[10px] px-2 py-0.5 rounded-sm bg-white/70 text-navy-600 font-mono-num border border-white/80">
+                        版本 v{confirmation.version}
+                      </span>
+                    </div>
                     <p className="text-xs text-navy-500">
                       本确认单由我司提供，供贵司核对本次活动预算。
+                      {latestRecord && (
+                        <>
+                          <br />
+                          <span className="text-navy-600 mt-1 inline-block">
+                            最近更新：{new Date(latestRecord.timestamp).toLocaleDateString('zh-CN')} · {latestRecord.operator}
+                            {latestRecord.comment && ` · ${latestRecord.comment}`}
+                          </span>
+                        </>
+                      )}
                       {confirmation.comment && (
                         <>
                           <br />
-                          <span className="text-navy-600 mt-1 block">
-                            备注：{confirmation.comment}
+                          <span className="text-navy-600 mt-0.5 inline-block">
+                            确认备注：{confirmation.comment}
                           </span>
                         </>
                       )}
@@ -794,7 +816,7 @@ function FullGrandTotalView(props: any) {
               colSpan={3}
               className="py-2 text-right text-navy-600 pr-4"
             >
-              税前合计
+              费用合计
             </td>
             <td className="py-2 text-right font-mono-num font-semibold text-navy-800 w-32">
               {formatCurrency(result.pretaxTotal)}
@@ -1145,7 +1167,7 @@ function SummaryView(props: any) {
                   colSpan={2}
                   className="py-1.5 text-right text-navy-500 pr-4 text-xs"
                 >
-                  费用合计（税前）
+                  费用合计
                 </td>
                 <td className="py-1.5 text-right font-mono-num text-navy-700 w-32">
                   {formatCurrency(result.pretaxTotal)}

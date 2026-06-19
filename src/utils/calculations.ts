@@ -223,10 +223,12 @@ export function calcSupplierFinal(
 /**
  * 计算单项小计：优先使用选中的供应商报价，否则按基准单价×系数
  *
- * 返回扩展信息以便避免重复计税：
- *  - subtotal:        此项目的总价（用于汇总 pretaxTotal，不含服务费率）
- *  - taxablePortion:  此项目中需要参与全单计税的部分（不含税报价 or 基准估算）
- *  - nonTaxablePortion:此项目中已含税、不再重复计税的部分（供应商含税报价）
+ * 计税原则（避免重复计税）：
+ *  - subtotal:        报价/估算本金（含税报价就=含税价，不含税报价就=不含税价，基准估算=未税估算）
+ *  - taxablePortion:  需在全局计税的「不含税本金」（不含税报价 + 基准估算）
+ *  - nonTaxablePortion:已含税、不再重复计税的部分（供应商含税报价）
+ *
+ *  注意：item 级不预先计税，所有税统一在 calculateBudget 的全局 tax 中计算，确保只算一次。
  */
 export function calcItemSubtotal(
   item: CostItem,
@@ -240,6 +242,7 @@ export function calcItemSubtotal(
   taxablePortion: number;
   nonTaxablePortion: number;
   fromSupplier: boolean;
+  isTaxIncluded: boolean;
   supplier?: SupplierInfo;
 } {
   // 1. 优先使用选中的供应商报价
@@ -253,23 +256,23 @@ export function calcItemSubtotal(
       }
 
       if (supplier.taxIncluded) {
-        // 含税报价：直接作为总计的一部分（nonTaxablePortion，不参与整体 tax 累加）
+        // 含税报价：本金 = 含税价，不再计税（nonTaxablePortion）
         return {
           subtotal: base,
           taxablePortion: 0,
           nonTaxablePortion: base,
           fromSupplier: true,
+          isTaxIncluded: true,
           supplier,
         };
       } else {
-        // 不含税报价：加上税，但作为应纳税部分参与整体（或先单独加税都放 taxablePortion）
-        // 为统一流程，将不含税折算后的金额作为 taxablePortion（会再乘全局税率）
-        const taxed = base * (1 + (supplier.applicableTaxRate || adjustmentsTaxRate) / 100);
+        // 不含税报价：本金 = 报价（未税），统一在全局计税
         return {
-          subtotal: taxed,
-          taxablePortion: base, // 不含税的报价本金 —— 整体计税时会再乘全局税率
+          subtotal: base,
+          taxablePortion: base,
           nonTaxablePortion: 0,
           fromSupplier: true,
+          isTaxIncluded: false,
           supplier,
         };
       }
@@ -284,6 +287,7 @@ export function calcItemSubtotal(
     taxablePortion: subtotal,
     nonTaxablePortion: 0,
     fromSupplier: false,
+    isTaxIncluded: false,
   };
 }
 

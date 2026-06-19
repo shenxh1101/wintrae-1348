@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   X,
   Plus,
@@ -41,6 +41,8 @@ const UNIT_OPTIONS = [
 export default function SupplierDrawer() {
   const activeCategory = useBudgetStore((s) => s.activeSupplierCategory);
   const setActiveSupplierCategory = useBudgetStore((s) => s.setActiveSupplierCategory);
+  const focusedSupplierId = useBudgetStore((s) => s.focusedSupplierId);
+  const setFocusedSupplierId = useBudgetStore((s) => s.setFocusedSupplierId);
   const data = useBudgetStore((s) => s.data);
   const suppliers = activeCategory ? data.suppliers[activeCategory] : [];
   const addSupplier = useBudgetStore((s) => s.addSupplier);
@@ -48,12 +50,29 @@ export default function SupplierDrawer() {
   const removeSupplier = useBudgetStore((s) => s.removeSupplier);
   const toggleSupplierRecommended = useBudgetStore((s) => s.toggleSupplierRecommended);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 当外部设置了 focusedSupplierId 时，自动展开并滚动到对应供应商
+  useEffect(() => {
+    if (focusedSupplierId && activeCategory) {
+      setExpandedId(focusedSupplierId);
+      // 延迟等待 DOM 渲染后滚动
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`supplier-card-${focusedSupplierId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [focusedSupplierId, activeCategory]);
 
   if (!activeCategory) return null;
 
   const handleClose = () => {
     setActiveSupplierCategory(null);
     setExpandedId(null);
+    setFocusedSupplierId(null);
   };
   const handleAdd = () => {
     const cat = activeCategory as CostCategory;
@@ -161,13 +180,15 @@ export default function SupplierDrawer() {
             const final = calcSupplierFinal(s);
             const valid = checkValid(s);
             const isExpanded = expandedId === s.id;
+            const isFocused = focusedSupplierId === s.id;
 
             return (
               <div
                 key={s.id}
+                id={`supplier-card-${s.id}`}
                 className={`card-base overflow-hidden transition-all ${
                   !valid.valid ? 'ring-1 ring-danger/40' : ''
-                }`}
+                } ${isFocused ? 'ring-2 ring-gold-400 ring-offset-2 shadow-lg' : ''}`}
               >
                 {/* 头部概览 */}
                 <div

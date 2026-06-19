@@ -7,6 +7,7 @@ import PlanSection from '@/components/PlanSection';
 import RiskSection from '@/components/RiskSection';
 import AdjustSection from '@/components/AdjustSection';
 import ConfirmationSection from '@/components/ConfirmationSection';
+import DeliveryChecklist from '@/components/DeliveryChecklist';
 import ExportSection from '@/components/ExportSection';
 import SupplierDrawer from '@/components/SupplierDrawer';
 import ComparePanel from '@/components/ComparePanel';
@@ -34,6 +35,7 @@ export default function Home() {
             <RiskSection />
             <AdjustSection />
             <ConfirmationSection />
+            <DeliveryChecklist />
             <ExportSection />
 
             <footer className="pt-10 pb-4 text-center">
